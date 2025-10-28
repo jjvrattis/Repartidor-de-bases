@@ -23,11 +23,11 @@ if 'generated_files' not in st.session_state:
 # --- Barra Lateral para Controles ---
 st.sidebar.header("Configurações")
 
-# 0. Seleção do Separador (NOVO)
+# 0. Seleção do Separador
 separator = st.sidebar.selectbox(
     "Qual o separador do seu arquivo?",
     options=[',', ';'],
-    index=1, # Padrão para ';' que é comum no Brasil
+    index=1, # Padrão para ';'
     format_func=lambda x: 'Vírgula (,)' if x == ',' else 'Ponto e Vírgula (;)',
     help="Escolha o caractere que separa as colunas no seu arquivo."
 )
@@ -43,7 +43,6 @@ uploaded_file = st.sidebar.file_uploader(
 # 2. Número de Divisões
 if uploaded_file is not None:
     try:
-        # Lê o arquivo usando o separador selecionado
         stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
         df_temp = pd.read_csv(stringio, sep=separator)
         total_rows = len(df_temp)
@@ -69,9 +68,15 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
     if uploaded_file is not None:
         st.session_state.generated_files = []
 
-        # Re-lê o arquivo para processamento (usando o separador correto)
+        # Re-lê o arquivo para processamento
         stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
         df = pd.read_csv(stringio, sep=separator)
+
+        # --- FUNÇÃO: Limpar Colunas Vazias/Unnamed ---
+        # Remove colunas que o pandas nomeia como "Unnamed" (geralmente por separadores extras)
+        cols_to_keep = [col for col in df.columns if not col.startswith('Unnamed')]
+        df = df[cols_to_keep]
+        st.success(f"✅ Colunas vazias removidas. Colunas mantidas: {', '.join(df.columns)}")
 
         # --- FUNÇÃO: Padronizar CPF ---
         cpf_col = None
@@ -81,7 +86,6 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
                 break
         
         if cpf_col:
-            # Converte a coluna para string e preenche com zeros à esquerda até ter 11 dígitos
             df[cpf_col] = df[cpf_col].astype(str).str.zfill(11)
             st.success(f"✅ Coluna '{cpf_col}' encontrada e padronizada com 11 dígitos.")
         else:
@@ -103,7 +107,7 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
             lote_df = df.iloc[start_index:end_index]
             
             csv_buffer = io.StringIO()
-            # Salva o arquivo com o mesmo separador de entrada
+            # Salva o arquivo com o mesmo separador de entrada e sem o índice
             lote_df.to_csv(csv_buffer, index=False, sep=separator)
             csv_data = csv_buffer.getvalue()
             
