@@ -17,27 +17,35 @@ Ideal para processar lotes de dados ou enviar bases em partes.
 """)
 
 # --- Inicialização do Estado da Sessão ---
-# Isso é crucial para que os arquivos gerados não desapareçam
 if 'generated_files' not in st.session_state:
     st.session_state.generated_files = []
 
 # --- Barra Lateral para Controles ---
 st.sidebar.header("Configurações")
 
+# 0. Seleção do Separador (NOVO)
+separator = st.sidebar.selectbox(
+    "Qual o separador do seu arquivo?",
+    options=[',', ';'],
+    index=1, # Padrão para ';' que é comum no Brasil
+    format_func=lambda x: 'Vírgula (,)' if x == ',' else 'Ponto e Vírgula (;)',
+    help="Escolha o caractere que separa as colunas no seu arquivo."
+)
+
 # 1. Upload do Arquivo
 uploaded_file = st.sidebar.file_uploader(
     "Escolha um arquivo CSV",
     type=['csv'],
     help="Faça o upload da base de dados que você deseja dividir.",
-    key="csv_uploader" # Chave única para o widget
+    key="csv_uploader"
 )
 
 # 2. Número de Divisões
 if uploaded_file is not None:
     try:
-        # Lê o arquivo para obter o número de linhas
+        # Lê o arquivo usando o separador selecionado
         stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
-        df_temp = pd.read_csv(stringio)
+        df_temp = pd.read_csv(stringio, sep=separator)
         total_rows = len(df_temp)
         st.sidebar.info(f"Seu arquivo tem **{total_rows:,}** linhas.")
         
@@ -59,15 +67,13 @@ else:
 # --- Botão de Ação Principal ---
 if st.sidebar.button("🚀 Dividir Base", type="primary"):
     if uploaded_file is not None:
-        # Limpa resultados anteriores
         st.session_state.generated_files = []
 
-        # Re-lê o arquivo para processamento
+        # Re-lê o arquivo para processamento (usando o separador correto)
         stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
-        df = pd.read_csv(stringio)
+        df = pd.read_csv(stringio, sep=separator)
 
-        # --- NOVA FUNÇÃO: Padronizar CPF ---
-        # Tenta encontrar a coluna 'CPF' (ignorando maiúsculas/minúsculas)
+        # --- FUNÇÃO: Padronizar CPF ---
         cpf_col = None
         for col in df.columns:
             if 'cpf' in col.lower():
@@ -89,10 +95,7 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
 
         rows_per_split = total_rows // num_splits
         
-        # Cria uma lista para armazenar os dados dos novos arquivos
         split_files = []
-
-        # Loop para criar os lotes
         for i in range(num_splits):
             start_index = i * rows_per_split
             end_index = start_index + rows_per_split if i < num_splits - 1 else total_rows
@@ -100,7 +103,8 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
             lote_df = df.iloc[start_index:end_index]
             
             csv_buffer = io.StringIO()
-            lote_df.to_csv(csv_buffer, index=False)
+            # Salva o arquivo com o mesmo separador de entrada
+            lote_df.to_csv(csv_buffer, index=False, sep=separator)
             csv_data = csv_buffer.getvalue()
             
             original_name = uploaded_file.name.replace('.csv', '')
@@ -108,10 +112,9 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
             
             split_files.append({'filename': file_name, 'data': csv_data})
 
-        # Armazena os arquivos gerados no estado da sessão
         st.session_state.generated_files = split_files
         st.success(f"Arquivo `{uploaded_file.name}` dividido em **{len(split_files)}** lotes com sucesso!")
-        st.rerun() # Força uma reexecução para exibir os resultados imediatamente
+        st.rerun()
 
 # --- Área de Download dos Arquivos (Persistente) ---
 if st.session_state.generated_files:
@@ -124,7 +127,7 @@ if st.session_state.generated_files:
             data=file_info['data'],
             file_name=file_info['filename'],
             mime='text/csv',
-            key=file_info['filename'] # Key única para cada botão
+            key=file_info['filename']
         )
 
 # --- Botão de Limpar ---
@@ -132,4 +135,4 @@ if st.session_state.generated_files:
     st.sidebar.markdown("---")
     if st.sidebar.button("🗑️ Limpar Painel"):
         st.session_state.generated_files = []
-        st.rerun() # Recarrega a página para limpar a interface
+        st.rerun()
