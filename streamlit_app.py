@@ -16,6 +16,11 @@ Este aplicativo divide um arquivo CSV grande em vários arquivos menores de igua
 Ideal para processar lotes de dados ou enviar bases em partes.
 """)
 
+# --- Inicialização do Estado da Sessão ---
+# Isso é crucial para que os arquivos gerados não desapareçam
+if 'generated_files' not in st.session_state:
+    st.session_state.generated_files = []
+
 # --- Barra Lateral para Controles ---
 st.sidebar.header("Configurações")
 
@@ -23,16 +28,16 @@ st.sidebar.header("Configurações")
 uploaded_file = st.sidebar.file_uploader(
     "Escolha um arquivo CSV",
     type=['csv'],
-    help="Faça o upload da base de dados que você deseja dividir."
+    help="Faça o upload da base de dados que você deseja dividir.",
+    key="csv_uploader" # Chave única para o widget
 )
 
 # 2. Número de Divisões
 if uploaded_file is not None:
-    # Lê o arquivo apenas para obter o número de linhas e mostrar ao usuário
     try:
-        # Usando chunksize para não carregar o arquivo inteiro na memória só para contar linhas
-        # Mas para este app, carregar tudo é mais simples e suficiente.
-        df_temp = pd.read_csv(uploaded_file)
+        # Lê o arquivo para obter o número de linhas
+        stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
+        df_temp = pd.read_csv(stringio)
         total_rows = len(df_temp)
         st.sidebar.info(f"Seu arquivo tem **{total_rows:,}** linhas.")
         
@@ -41,7 +46,7 @@ if uploaded_file is not None:
             "Em quantos lotes deseja dividir?",
             min_value=2,
             max_value=max_splits,
-            value=10, # Valor padrão
+            value=10,
             step=1,
             help="O número total de arquivos que serão gerados."
         )
@@ -50,64 +55,81 @@ if uploaded_file is not None:
         st.stop()
 else:
     st.sidebar.info("Por favor, faça o upload de um arquivo para começar.")
-    st.stop() # Para a execução se não houver arquivo
 
-# --- Botão de Ação ---
-if st.sidebar.button("🚀 Dividir Base"):
+# --- Botão de Ação Principal ---
+if st.sidebar.button("🚀 Dividir Base", type="primary"):
     if uploaded_file is not None:
-        # Re-lê o arquivo para processamento (o cursor do arquivo pode ter mudado)
-        # Usamos io.StringIO para tratar o upload como um arquivo em memória
+        # Limpa resultados anteriores
+        st.session_state.generated_files = []
+
+        # Re-lê o arquivo para processamento
         stringio = io.StringIO(uploaded_file.getvalue().decode('utf-8'))
         df = pd.read_csv(stringio)
 
+        # --- NOVA FUNÇÃO: Padronizar CPF ---
+        # Tenta encontrar a coluna 'CPF' (ignorando maiúsculas/minúsculas)
+        cpf_col = None
+        for col in df.columns:
+            if 'cpf' in col.lower():
+                cpf_col = col
+                break
+        
+        if cpf_col:
+            # Converte a coluna para string e preenche com zeros à esquerda até ter 11 dígitos
+            df[cpf_col] = df[cpf_col].astype(str).str.zfill(11)
+            st.success(f"✅ Coluna '{cpf_col}' encontrada e padronizada com 11 dígitos.")
+        else:
+            st.warning("⚠️ Nenhuma coluna com 'CPF' no nome foi encontrada. Os arquivos serão gerados sem a padronização de CPF.")
+
         total_rows = len(df)
         
-        # Validação para não dividir em mais partes que linhas
         if num_splits > total_rows:
             st.error(f"Não é possível dividir {total_rows} linhas em {num_splits} arquivos.")
             st.stop()
 
-        # Calcula o número de linhas por lote
         rows_per_split = total_rows // num_splits
         
-        st.success(f"Dividindo o arquivo `{uploaded_file.name}` em **{num_splits}** lotes de aproximadamente **{rows_per_split}** linhas cada.")
-
         # Cria uma lista para armazenar os dados dos novos arquivos
         split_files = []
 
         # Loop para criar os lotes
         for i in range(num_splits):
             start_index = i * rows_per_split
-            # O último lote pega o resto das linhas, se houver
             end_index = start_index + rows_per_split if i < num_splits - 1 else total_rows
             
-            # Fatia o DataFrame
             lote_df = df.iloc[start_index:end_index]
             
-            # Converte o lote para CSV em memória (sem o índice)
             csv_buffer = io.StringIO()
             lote_df.to_csv(csv_buffer, index=False)
             csv_data = csv_buffer.getvalue()
             
-            # Define o nome do arquivo
             original_name = uploaded_file.name.replace('.csv', '')
             file_name = f"{original_name}_lote_{i+1}.csv"
             
-            # Adiciona à lista de arquivos para download
             split_files.append({'filename': file_name, 'data': csv_data})
 
-        # --- Área de Download dos Arquivos ---
-        st.subheader("📦 Arquivos Gerados")
-        st.write("Clique nos botões abaixo para baixar cada lote:")
+        # Armazena os arquivos gerados no estado da sessão
+        st.session_state.generated_files = split_files
+        st.success(f"Arquivo `{uploaded_file.name}` dividido em **{len(split_files)}** lotes com sucesso!")
+        st.rerun() # Força uma reexecução para exibir os resultados imediatamente
 
-        # Exibe um botão de download para cada arquivo gerado
-        for file_info in split_files:
-            st.download_button(
-                label=f"📥 Baixar {file_info['filename']}",
-                data=file_info['data'],
-                file_name=file_info['filename'],
-                mime='text/csv',
-                key=file_info['filename'] # Key única para cada botão
-            )
-    else:
-        st.warning("Por favor, faça o upload de um arquivo primeiro.")
+# --- Área de Download dos Arquivos (Persistente) ---
+if st.session_state.generated_files:
+    st.subheader("📦 Arquivos Gerados")
+    st.write("Clique nos botões abaixo para baixar cada lote:")
+
+    for file_info in st.session_state.generated_files:
+        st.download_button(
+            label=f"📥 Baixar {file_info['filename']}",
+            data=file_info['data'],
+            file_name=file_info['filename'],
+            mime='text/csv',
+            key=file_info['filename'] # Key única para cada botão
+        )
+
+# --- Botão de Limpar ---
+if st.session_state.generated_files:
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🗑️ Limpar Painel"):
+        st.session_state.generated_files = []
+        st.rerun() # Recarrega a página para limpar a interface
