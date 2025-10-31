@@ -73,20 +73,31 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
         df = pd.read_csv(stringio, sep=separator)
 
         # --- FUNÇÃO: Limpar Colunas Vazias/Unnamed ---
-        # Remove colunas que o pandas nomeia como "Unnamed" (geralmente por separadores extras)
         cols_to_keep = [col for col in df.columns if not col.startswith('Unnamed')]
         df = df[cols_to_keep]
         st.success(f"✅ Colunas vazias removidas. Colunas mantidas: {', '.join(df.columns)}")
 
-        # --- FUNÇÃO: Padronizar CPF ---
+        # --- NOVA FUNÇÃO: Corrigir Tipos de Dados (CPF e FONE) ---
+        # Identifica colunas que devem ser texto
         cpf_col = None
+        fone_col = None
         for col in df.columns:
             if 'cpf' in col.lower():
                 cpf_col = col
-                break
-        
+            if 'fone' in col.lower() or 'telefone' in col.lower() or 'celular' in col.lower():
+                fone_col = col
+
+        # Converte as colunas para string e remove o .0
         if cpf_col:
-            df[cpf_col] = df[cpf_col].astype(str).str.zfill(11)
+            df[cpf_col] = df[cpf_col].astype(str).str.replace('.0', '', regex=False)
+        if fone_col:
+            df[fone_col] = df[fone_col].astype(str).str.replace('.0', '', regex=False)
+        
+        st.info("✅ Colunas de CPF e Fone foram convertidas para texto para remover o '.0'.")
+
+        # --- FUNÇÃO: Padronizar CPF (agora com a coluna já limpa) ---
+        if cpf_col:
+            df[cpf_col] = df[cpf_col].str.zfill(11)
             st.success(f"✅ Coluna '{cpf_col}' encontrada e padronizada com 11 dígitos.")
         else:
             st.warning("⚠️ Nenhuma coluna com 'CPF' no nome foi encontrada. Os arquivos serão gerados sem a padronização de CPF.")
@@ -107,7 +118,6 @@ if st.sidebar.button("🚀 Dividir Base", type="primary"):
             lote_df = df.iloc[start_index:end_index]
             
             csv_buffer = io.StringIO()
-            # Salva o arquivo com o mesmo separador de entrada e sem o índice
             lote_df.to_csv(csv_buffer, index=False, sep=separator)
             csv_data = csv_buffer.getvalue()
             
